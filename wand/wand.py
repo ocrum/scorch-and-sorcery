@@ -1,4 +1,4 @@
-from now import Now
+from networking import Networking
 from machine import Pin, SoftI2C, ADC, PWM
 import asyncio
 from lsm6ds3 import LSM6DS3
@@ -24,47 +24,84 @@ class Wand:
         self.win_status = ""
 
         # Initialize I2C
-        self.i2c = SoftI2C(scl = Pin(7), sda = Pin(6))
-
+        self.i2c = SoftI2C(scl=Pin(7), sda=Pin(6))
         self.lsm = LSM6DS3(self.i2c)
 
+        # Initialize LEDs
         self.red = LED(pin_num=0)
         self.green = LED(pin_num=1)
         self.white = LED(pin_num=2)
 
+        # Initialize Button
         self.button = Button(pin_num=9)
 
-        # ESPNOW
-        self.n = Now(self.my_callback)
-        self.n.connect()
-        self.mac = self.n.wifi.config('mac')
+        # Initialize Networking
+        self.networking = Networking()
+        self.networking.initialize()  # Method to set up networking parameters
+        self.networking.start()        # Start the networking interface
+        self.mac = self.networking.get_mac()
         print("MAC Address:", ':'.join('{:02X}'.format(b) for b in self.mac))
 
-    def my_callback(self, msg, mac):
-        print(mac, msg)
-        self.n.publish(msg, mac)
-        win_status = msg
+        # Set the recipient MAC address (broadcast in this case)
+        self.recipient_mac = b'\xFF\xFF\xFF\xFF\xFF\xFF'
 
-    # Tag game (get from Jaylen & Cory)
-    async def tag(self):
-        # if in proximity to dragon - rssi:
-        # tagged
-        tag_state = True
-        # led turns red
+        # Initialize RSSI threshold
+        self.RSSI_THRESHOLD = -65  # Example threshold value
+
+    async def handle_incoming_messages(self):
+        while True:
+            messages = self.networking.receive()
+            for msg, mac, rssi in messages:
+                decoded_msg = msg.decode('utf-8')
+                print(f"Received from {':'.join('{:02X}'.format(b) for b in mac)}: {decoded_msg} with RSSI {rssi}")
+                self.win_status = decoded_msg
+
+                # Handle specific messages
+                if decoded_msg == "!completed":
+                    await self.handle_win()
+                elif decoded_msg == "!tagged":
+                    await self.handle_tagged()
+                else:
+                    # Handle other spells or commands
+                    pass
+            await asyncio.sleep(0.1)  # Adjust the polling interval as needed
+
+    async def handle_tagged(self):
+        # Logic when the wand is tagged
+        self.tag_state = True
         self.red.on()
         self.green.off()
         self.white.off()
+        print("Wand has been tagged!")
 
-        self.n.publish(b'!tagged')
+    async def handle_win(self):
+        # Logic when the game is won
+        self.red.off()
+        self.green.on()
+        self.white.off()
+        print("The Wizards win!")
+        self.networking.stop()  # Properly stop the networking interface
+
+    async def tag(self):
+        if not self.tag_state:
+            # Check proximity based on RSSI if necessary
+            # For simplicity, tagging action is triggered manually or via some condition
+            self.tag_state = True
+            self.red.on()
+            self.green.off()
+            self.white.off()
+
+            # Send a tagged message to all
+            self.networking.send(self.recipient_mac, b'!tagged')
+            print("Tagged and sent '!tagged' message")
 
     def read_movement_data(self):
         ax, ay, az, gx, gy, gz = self.lsm.get_readings()
-        return gz, gx # TODO adjust the axis of rotation
+        return gz, gx  # Adjust the axis of rotation as needed
 
     def determine_spell(self, lr_data, ud_data):
-        THRESHOLD = 32764 # TODO tune treshold
+        THRESHOLD = 32764  # Tune threshold as needed
 
-        # Count the number of values that meet the criteria for each spell
         counts = {
             Spell.UP: sum(1 for value in ud_data if value <= -THRESHOLD),
             Spell.DOWN: sum(1 for value in ud_data if value >= THRESHOLD),
@@ -73,10 +110,8 @@ class Wand:
         }
 
         max_spell, max_count = max(counts.items(), key=lambda x: x[1])
-
         return max_spell if max_count > 0 else Spell.OTHER
 
-    # puppet
     async def puzzle(self):
         if self.game_mode != GameMode.INFERNO and self.button.is_pressed():
             lr_data = []
@@ -90,30 +125,25 @@ class Wand:
             movement = self.determine_spell(lr_data, ud_data)
 
             if movement == Spell.OTHER:
-                print("other spell")
+                print("Detected an unknown spell")
             else:
-                print(movement)
-                self.n.publish(b'!' + movement.encode('utf-8'))
-                await asyncio.sleep_ms(10) #TODO tune the cool down
-                # TODO give feedback on the spell
+                print(f"Detected spell: {movement}")
+                spell_message = f"!{movement}".encode('utf-8')
+                self.networking.send(self.recipient_mac, spell_message)
+                await asyncio.sleep_ms(10)  # Tune the cooldown as needed
+                # TODO: Provide feedback on the spell (e.g., LED indicators)
 
-    # see if won
     async def win_check(self):
         if self.win_status == "!completed":
-            self.red.off()
-            self.green.on()
-            self.white.off()
-
-            self.n.close()
+            await self.handle_win()
 
     async def run(self):
-        # Run all asynchronous tasks
-        while True:
-            # Run the tasks concurrently
-            await asyncio.gather(
-                self.win_check(),
-                self.puzzle(),
-                self.tag())
+        # Create tasks for handling incoming messages, puzzles, and tagging
+        await asyncio.gather(
+            self.handle_incoming_messages(),
+            self.puzzle(),
+            self.tag()
+        )
 
 # Initialize the Wand object and run the tasks asynchronously
 wand = Wand()
