@@ -44,18 +44,18 @@ try:
             move_to_random_position()
             time.sleep(.5)
 
-        pot_val = pot.read()
-        if pot_val < 2000:
-            n.publish(b'!individual')
-            print("individual")
-            time.sleep(.5)
-        elif pot_val > 2000:
-            n.publish(b'!together')
-            print("together")
-            time.sleep(.5)
+            pot_val = pot.read()
+            if pot_val < 2000:
+                n.publish(b'!individual')
+                print("individual")
+                time.sleep(.5)
+            elif pot_val > 2000:
+                n.publish(b'!together')
+                print("together")
+                time.sleep(.5)
 
 except KeyboardInterrupt:
-    print("Interrupted! Cleaning up...")
+print("Interrupted! Cleaning up...")
 
 finally:
     # Ensure interfaces are deactivated on exit
