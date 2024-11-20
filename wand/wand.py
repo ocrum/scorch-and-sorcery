@@ -1,4 +1,4 @@
-from now import Now
+from networking import Networking
 from machine import Pin, SoftI2C, ADC, PWM
 import asyncio
 from lsm6ds3 import LSM6DS3
@@ -11,21 +11,20 @@ class GameMode:
     PUZZLE = "puzzle"
 
 class Spell:
-    UP = "up"
-    DOWN = "down"
-    LEFT = "left"
-    RIGHT = "right"
+    UP = "head"
+    DOWN = "tail"
+    LEFT = "legs"
+    RIGHT = "wings"
     OTHER = "other"
 
 class Wand:
     def __init__(self):
         self.tag_state = False     # whether tagged
         self.game_mode = GameMode.S_and_S
-        self.win_status = ""
+        self.msg = ""
 
         # Initialize I2C
-        self.i2c = SoftI2C(scl = Pin(7), sda = Pin(6))
-
+        self.i2c = SoftI2C(scl=Pin(7), sda=Pin(6))
         self.lsm = LSM6DS3(self.i2c)
 
         self.red = LED(pin_num=0)
@@ -34,28 +33,22 @@ class Wand:
 
         self.button = Button(pin_num=9)
 
-        # ESPNOW
-        self.n = Now(self.my_callback)
-        self.n.connect()
-        self.mac = self.n.wifi.config('mac')
-        print("MAC Address:", ':'.join('{:02X}'.format(b) for b in self.mac))
+        # Networking
+        self.networking = Networking()
 
-    def my_callback(self, msg, mac):
-        print(mac, msg)
-        self.n.publish(msg, mac)
-        win_status = msg
+    def my_callback(self):
+        for mac, message, rtime in self.networking.aen.return_messages(): #You can directly iterate over the function
+            self.msg = message
 
-    # Tag game (get from Jaylen & Cory)
     async def tag(self):
-        # if in proximity to dragon - rssi:
-        # tagged
-        tag_state = True
-        # led turns red
+        # If in proximity to dragon - rssi:
+        self.tag_state = True
+        # LED turns red
         self.red.on()
         self.green.off()
         self.white.off()
 
-        self.n.publish(b'!tagged')
+        # self.networking.send(b'\xFF\xFF\xFF\xFF\xFF\xFF', b'!tagged')
 
     def read_movement_data(self):
         ax, ay, az, gx, gy, gz = self.lsm.get_readings()
@@ -64,7 +57,6 @@ class Wand:
     def determine_spell(self, lr_data, ud_data):
         THRESHOLD = 32764 # TODO tune treshold
 
-        # Count the number of values that meet the criteria for each spell
         counts = {
             Spell.UP: sum(1 for value in ud_data if value <= -THRESHOLD),
             Spell.DOWN: sum(1 for value in ud_data if value >= THRESHOLD),
@@ -73,10 +65,8 @@ class Wand:
         }
 
         max_spell, max_count = max(counts.items(), key=lambda x: x[1])
-
         return max_spell if max_count > 0 else Spell.OTHER
 
-    # puppet
     async def puzzle(self):
         if self.game_mode != GameMode.INFERNO and self.button.is_pressed():
             lr_data = []
@@ -93,30 +83,24 @@ class Wand:
                 print("other spell")
             else:
                 print(movement)
-                self.n.publish(b'!' + movement.encode('utf-8'))
-                await asyncio.sleep_ms(10) #TODO tune the cool down
-                # TODO give feedback on the spell
+                self.networking.aen.send(b'\xFF\xFF\xFF\xFF\xFF\xFF', b'!' + movement)
+                await asyncio.sleep_ms(10)  # Tune the cooldown as needed
 
-    # see if won
     async def win_check(self):
-        if self.win_status == "!completed":
+        if self.msg == "!completed":
             self.red.off()
             self.green.on()
             self.white.off()
 
-            self.n.close()
-
     async def run(self):
-        # Run all asynchronous tasks
         while True:
-            # Run the tasks concurrently
+            self.my_callback()
             await asyncio.gather(
                 self.win_check(),
                 self.puzzle(),
-                self.tag())
+                self.tag()
+            )
 
 # Initialize the Wand object and run the tasks asynchronously
 wand = Wand()
-
-# Run the asyncio event loop
 asyncio.run(wand.run())
