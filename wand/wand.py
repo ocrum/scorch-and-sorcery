@@ -11,10 +11,10 @@ class GameMode:
     PUZZLE = "puzzle"
 
 class Spell:
-    UP = "head"
-    DOWN = "tail"
-    LEFT = "legs"
-    RIGHT = "wings"
+    UP = "up"
+    DOWN = "down"
+    LEFT = "left"
+    RIGHT = "right"
     OTHER = "other"
 
 class Wand:
