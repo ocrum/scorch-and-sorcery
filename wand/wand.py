@@ -20,7 +20,7 @@ class Wand:
         self.i2c = SoftI2C(scl=Pin(23), sda=Pin(22)) # 23 -> Pin 5; 22 -> Pin 4
         self.lsm = LSM6DS3(self.i2c)
 
-        self.button = Button(pin_num=9)
+        self.button = Button(pin_num=0)
 
         # Networking
         self.networking = Networking()
@@ -31,20 +31,23 @@ class Wand:
 
     def read_movement_data(self):
         ax, ay, az, gx, gy, gz = self.lsm.get_readings()
-        return gz, gx # TODO adjust the axis of rotation
+        return gy, gx # TODO adjust the axis of rotation
 
     def determine_spell(self, lr_data, ud_data):
         THRESHOLD = 32764 # TODO tune treshold
 
         counts = {
-            Spell.UP: sum(1 for value in ud_data if value <= -THRESHOLD),
-            Spell.DOWN: sum(1 for value in ud_data if value >= THRESHOLD),
-            Spell.LEFT: sum(1 for value in lr_data if value >= THRESHOLD),
-            Spell.RIGHT: sum(1 for value in lr_data if value <= -THRESHOLD)
+            Spell.UP: (sum(1 for value in ud_data if value >= THRESHOLD), abs(max(ud_data, default=0))),
+            Spell.DOWN: (sum(1 for value in ud_data if value <= -THRESHOLD), abs(min(ud_data, default=0))),
+            Spell.LEFT: (sum(1 for value in lr_data if value >= THRESHOLD), abs(max(lr_data, default=0))),
+            Spell.RIGHT: (sum(1 for value in lr_data if value <= -THRESHOLD), abs(min(lr_data, default=0)))
         }
 
-        max_spell, max_count = max(counts.items(), key=lambda x: x[1])
-        return max_spell if max_count > 0 else Spell.OTHER
+        max_spell, (max_count, _) = max(counts.items(), key=lambda x: x[1][0])
+        max_weak_spell, (_, max_weak_val) = max(counts.items(), key=lambda x: x[1][1])
+        if max_count == 0:
+            print(max_weak_val)
+        return max_spell if max_count > 0 else (max_weak_spell if max_weak_val > 10 else Spell.OTHER)
 
     async def puzzle(self):
         if self.button.is_pressed():
