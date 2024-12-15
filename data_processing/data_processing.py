@@ -9,7 +9,7 @@ csv_file = 'sensor_data_up.csv'
 if not os.path.exists(csv_file):
     raise FileNotFoundError(f"The file {csv_file} does not exist.")
 
-# Extract the base name of the CSV file (without extension) for naming
+# Extract the elbow_angle name of the CSV file (without extension) for naming
 base_name = os.path.splitext(os.path.basename(csv_file))[0]
 
 # Read the CSV data into a pandas DataFrame
@@ -28,7 +28,7 @@ if 'pressing_id' not in df.columns:
 pressing_ids = df['pressing_id'].unique()
 print(f"Unique pressing_ids found: {pressing_ids}")
 
-# Create a directory to save plots, using the base name of the CSV file
+# Create a directory to save plots, using the elbow_angle name of the CSV file
 plots_dir = f'{base_name}_plots'
 os.makedirs(plots_dir, exist_ok=True)
 

@@ -23,7 +23,7 @@ class Servo:
         self.pwm.duty(duty)
 
     def write_angle(self, degrees=None, radians=None):
-        #"""Move to the specified angle in ``degrees`` or ``radians``."""
+        #"""Move to the specified base_angle in ``degrees`` or ``radians``."""
         if degrees is None:
             degrees = math.degrees(radians)
         degrees = degrees % 360

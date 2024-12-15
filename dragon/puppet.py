@@ -12,25 +12,25 @@ class Puppet:
         self.movements = [b'!up', b'!right', b'!left', b'!down']
 
         # set up servos
-        self.head = PWM(Pin(2))
+        self.head = PWM(Pin(0))
         self.head.freq(50)
 
-        self.tail = PWM(Pin(6))
+        self.tail = PWM(Pin(22))
         self.tail.freq(50)
 
-        self.wings = PWM(Pin(4))
+        self.wings = PWM(Pin(2))
         self.wings.freq(50)
 
-        self.back_leg = PWM(Pin(5))
+        self.back_leg = PWM(Pin(21))
         self.back_leg.freq(50)
 
-        self.front_leg = PWM(Pin(3))
+        self.front_leg = PWM(Pin(1))
         self.front_leg.freq(50)
 
         # set up LEDs
-        self.led1 = Pin(8, Pin.OUT)
-        self.led2 = Pin(9, Pin.OUT)
-        self.led3 = Pin(10, Pin.OUT)
+        self.led1 = Pin(19, Pin.OUT)
+        self.led2 = Pin(20, Pin.OUT)
+        self.led3 = Pin(18, Pin.OUT)
 
         self.led1.off()
         self.led2.off()
@@ -41,15 +41,15 @@ class Puppet:
         self.one_done = False
         self.two_done = False
 
-        self.mini_motor = servo.Servo(Pin(21))
+        self.mini_motor = servo.Servo(Pin(16))
         self.mini_motor.write_angle(20)
 
-        self.button = Pin(20, Pin.IN, Pin.PULL_UP)
+        self.button = Pin(17, Pin.IN, Pin.PULL_UP)
 
         self.is_solved = False
 
     def set_servo_angle(self, angle, motor):
-        # Map angle to duty cycle range (adjust if necessary for your servo)
+        # Map base_angle to duty cycle range (adjust if necessary for your servo)
         min_duty = 1024  # Replace with your servo's minimum duty cycle
         max_duty = 8192  # Replace with your servo's maximum duty cycle
         duty = int(min_duty + (angle / 180) * (max_duty - min_duty))
@@ -62,6 +62,15 @@ class Puppet:
                 self.final_msg = b''
             else:
                 self.final_msg = message
+            # self.final_msg = message
+
+        print(f'message: {str(message)}')
+
+    def set_start(self):
+        self.set_servo_angle(120, self.head)
+        self.set_servo_angle(90, self.front_leg)
+        self.set_servo_angle(120, self.wings)
+        self.set_servo_angle(100, self.tail)
 
     def movement(self, msg):
         print(type(msg))
@@ -100,7 +109,6 @@ class Puppet:
             time.sleep(1)
             self.set_servo_angle(100, self.tail)
             print("tail moves")
-
         else:
             print("unknown message")
 
@@ -166,4 +174,5 @@ class Puppet:
 puppet = Puppet()
 
 while True:
+    puppet.set_start()
     puppet.run()

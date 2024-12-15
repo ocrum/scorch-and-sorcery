@@ -1,13 +1,12 @@
 import asyncio
+import neopixel
 from machine import Pin, PWM
+import time
 from networking import Networking
 
 class Wizard:
     def __init__(self):
-        self.button = Pin(9, Pin.IN)
-        self.GREEN = Pin(1,Pin.OUT) #Pin number will be determined later placeholder
-        self.RED = Pin(0,Pin.OUT) #Pin number will be determined later placeholder
-        self.WHITE = Pin(2, Pin.OUT) #Pin number will be determined later placeholder
+        self.buzzer = Pin(0, Pin.OUT)
         self.hit = 0
         self.msg = ''
         self.beginGame = False
@@ -15,8 +14,12 @@ class Wizard:
         self.networking = Networking()
         self.recipient_mac = b'\xFF\xFF\xFF\xFF\xFF\xFF'
         self.totalGametime = 300
-        
-        
+        self.pressed = False
+        self.counter = 0
+        self.scorched = False
+        self.lossed = False
+
+
 
     '''
     Handler function for ESPNOW. Extracts message and stores it in class variable
@@ -25,7 +28,15 @@ class Wizard:
         # print("Receive")
         for mac, message, rtime in self.networking.aen.return_messages(): #You can directly iterate over the function
             self.msg = message
-    
+
+    def beep(self, frequency, duration):
+        # Generate a tone using PWM
+        pwm = PWM(self.buzzer)
+        pwm.freq(frequency)  # Set the frequency in Hz
+        pwm.duty(512)  # Set the duty cycle (50% for a constant tone)
+        time.sleep(duration)  # Wait for the specified duration
+        pwm.duty(0)  # Turn off the PWM signal to stop the sound
+
     '''
     Function to handle Wizard health. Each wizard has 1 life. If they are hit
     once they will "die" and not be in the game anymore. Hits are determined based
@@ -40,64 +51,68 @@ class Wizard:
             try:
                 # rssi_value = placeholder[b'T2\x043H\x14'][0] #Cory ESP As Dragon
                 rssi_value = placeholder[b'T2\x04!a\x9c'][0] #Jaylen ESP As Dragon
+                print(rssi_value)
             except KeyError:
                 pass
 
-            if self.msg == '!reset':
-                self.hit = 0
-                self.totalGametime = 300
-                self.GREEN.off()
-                self.RED.off()
-                self.WHITE.off()
-                self.beginGame = True
-                print("Game has started")
+            if self.msg == '!scorched':
+                self.scorched = True
 
+            if self.msg == '!reset':
+                self.msg = ''
+                self.hit = 0
+                self.counter = 0
+                self.totalGametime = 300
+                self.beginGame = True
+                self.scorched = False
+                self.lossed = False
+                print("Game has started")
+                self.beep(1000, 2)
             # if message is detected AND rssi is within the threashold, player gets hit
-            if self.msg == 'breathingFire' and rssi_value > -65 and self.beginGame:
+            if self.msg == '!breathingFire' and rssi_value > -75 and self.beginGame:
 
                 print("HITTTT!")
                 self.hit = 1
 
+
+            # magic button has been found and being pressed for the first time
+            # The wizards will send the same message to ensure every player in the game
+            # knows that the magic button was pressed.
+            if self.msg == '!magic' and self.beginGame and not self.pressed:
+                self.hit = 0
+                self.counter = 0
+                self.pressed = True
+                self.networking.aen.send(self.recipient_mac, '!magic')
+                self.beep(1000, .5)
+                self.beep(1000, .5)
+                print("The magic button has been found")
+
             # If a player is dead, advertise their ID, if not, put them in jail
-            if self.hit == 1 and self.beginGame == True:
+            if self.hit == 1 and self.beginGame == True and self.counter < 3:
                 message =  f'im dead'
                 self.networking.aen.send(self.recipient_mac, message)
-                print(f'Wizard Is Dead', end='\r')
+                print(f'Wizard Is Dead')
+                self.beep(300, .5)
+                # self.beep(300, .5)
+                # self.beep(300, .5)
+                self.counter = self.counter + 1
             elif self.hit == 0 and self.beginGame == True:
-                print(f'Wizard Is Alive', end='\r')
+                print(f'Wizard Is Alive')
 
-            # print(rssi_value)
             await asyncio.sleep(0.1)
-            
-    '''
-    Function to handle the LED state:
-        Dead: Neopixel Off
-        Alive: Solid White
-    '''
-    async def neoPixel(self):
-        while True:
-            # Wizard Dead (Neo Off)
-            if self.hit == 1:
-                self.WHITE.off()
-                self.GREEN.off()
-                self.RED.on()
 
-            # Wizard in Game (White)
-            else:
-                self.WHITE.on()
-                self.GREEN.off()
-                self.RED.off()
-            await asyncio.sleep(0.01)
-    
+
     async def gameOver(self):
         while True:
             if self.totalGametime == 0:
                 # self.led[0] = RED #Wizards outlasted the timer
-                self.WHITE.off()
-                self.RED.off()
-                self.GREEN.on()
+                self.beep(1000, 2)
                 self.inGame = False
-                print("The Wizards wins!")
+                print("The Wizards Wins!")
+            elif self.scorched and not self.lossed:
+                self.beep(1000, 2)
+                self.lossed = True
+                print("The Dragon Wins")
             await asyncio.sleep(0.01)
 
 
@@ -115,7 +130,6 @@ class Wizard:
         asyncio.create_task(self.check_health())
         asyncio.create_task(self.timer())
         asyncio.create_task(self.gameOver())
-        asyncio.create_task(self.neoPixel())
         while True:
             await asyncio.sleep(0.1)
 
