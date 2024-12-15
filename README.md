@@ -1,6 +1,6 @@
 # Scorch and Sorcery
 
-Some form of description
+Code used for the Scorch & Sorcery game for ME 35.
 
 ## Installation
 
